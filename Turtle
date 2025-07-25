@@ -1,0 +1,29 @@
+import turtle
+import random
+# Set_up the screen
+screen = turtle.Screen()
+screen.bgcolor("black")
+
+# Create turtle
+spiro = turtle.Turtle()
+spiro.speed("slowest")
+turtle.colormode(255)
+
+# Function to generate random color
+def random_color():
+    r = random.randint(0, 255)
+    g = random.randint(0, 255)
+    b = random.randint(0, 255)
+    return (r, g, b)
+
+# Draw spirograph
+def draw_spirograph(gap_angle):
+    for _ in range(int(360 / gap_angle)):
+        spiro.color(random_color())
+        spiro.circle(100)
+        spiro.setheading(spiro.heading() + gap_angle)
+
+draw_spirograph(5)
+
+# Exit on click
+screen.exitonclick()
