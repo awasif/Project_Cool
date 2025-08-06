@@ -1,0 +1,475 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+// IMPORTANT: FIRBASE CONFIGURATION
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+// You will need to replace this with your actual Firebase configuration.
+// You can get this from your Firebase project settings.
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+};
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+// MAIN APP COMPONENT
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+const App = () => {
+    // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    // State management
+    // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [user, setUser] = useState(null);
+    const [activeTab, setActiveTab] = useState('projects');
+
+    // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    // Firebase Initialization
+    // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    useEffect(() => {
+        try {
+            const app = initializeApp(firebaseConfig);
+            const firestore = getFirestore(app);
+            const authInstance = getAuth(app);
+            setDb(firestore);
+            setAuth(authInstance);
+        } catch (error) {
+            console.error("Error initializing Firebase:", error);
+        }
+    }, []);
+
+    // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    // Authentication State Observer
+    // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    useEffect(() => {
+        if (auth) {
+            const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+                if (currentUser) {
+                    setUser(currentUser);
+                } else {
+                    signInAnonymously(auth).catch(error => {
+                        console.error("Anonymous sign-in failed:", error);
+                    });
+                }
+            });
+            return () => unsubscribe();
+        }
+    }, [auth]);
+
+    // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    // Render Logic
+    // --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    if (!db || !auth || !user) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
+                <div className="text-center">
+                    <svg className="animate-spin h-10 w-10 text-blue-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p className="text-lg">Connecting to Dashboard...</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
+            <Header />
+            <main className="container mx-auto p-4 sm:p-6 lg:p-8">
+                <div className="flex flex-col lg:flex-row gap-8">
+                    <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+                    <div className="flex-grow">
+                        {activeTab === 'projects' && <ProjectsManager db={db} />}
+                        {activeTab === 'roles' && <RolesManager db={db} />}
+                        {activeTab === 'customization' && <CustomizationManager db={db} />}
+                    </div>
+                </div>
+            </main>
+        </div>
+    );
+};
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+// SUB-COMPONENTS
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+
+// Header Component
+const Header = () => (
+    <header className="bg-gray-800 shadow-lg">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-wider">
+                Portfolio Dashboard
+            </h1>
+            <div className="flex items-center space-x-2">
+                 <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+                 <span className="text-sm text-green-400">Online</span>
+            </div>
+        </div>
+    </header>
+);
+
+// Sidebar Component
+const Sidebar = ({ activeTab, setActiveTab }) => {
+    const navItems = [
+        { id: 'projects', label: 'Projects', icon: 'M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.25 4.5h13.5' },
+        { id: 'roles', label: 'Roles', icon: 'M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z' },
+        { id: 'customization', label: 'Customization', icon: 'M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75' }
+    ];
+
+    return (
+        <aside className="w-full lg:w-64 bg-gray-800 p-6 rounded-lg shadow-xl">
+            <nav className="space-y-4">
+                {navItems.map(item => (
+                    <button
+                        key={item.id}
+                        onClick={() => setActiveTab(item.id)}
+                        className={`w-full flex items-center px-4 py-3 text-lg rounded-md transition-all duration-200 ease-in-out transform hover:scale-105 ${
+                            activeTab === item.id
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-3">
+                            <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                        </svg>
+                        {item.label}
+                    </button>
+                ))}
+            </nav>
+        </aside>
+    );
+};
+
+// Generic Form Input Component
+const FormInput = ({ id, label, type, value, onChange, placeholder, required = true }) => (
+    <div>
+        <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
+        <input
+            type={type}
+            id={id}
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            required={required}
+            className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+        />
+    </div>
+);
+
+// Generic Textarea Component
+const FormTextarea = ({ id, label, value, onChange, placeholder, required = true }) => (
+    <div>
+        <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
+        <textarea
+            id={id}
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            required={required}
+            rows="4"
+            className="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+        />
+    </div>
+);
+
+// Generic Button Component
+const Button = ({ children, onClick, type = 'button', variant = 'primary', disabled = false }) => {
+    const baseClasses = "px-4 py-2 rounded-md font-semibold transition duration-200 ease-in-out transform disabled:opacity-50 disabled:cursor-not-allowed";
+    const variants = {
+        primary: "bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50",
+        secondary: "bg-gray-600 text-gray-200 hover:bg-gray-700 focus:ring-2 focus:ring-gray-500",
+        danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-2 focus:ring-red-500",
+    };
+    return (
+        <button type={type} onClick={onClick} className={`${baseClasses} ${variants[variant]}`} disabled={disabled}>
+            {children}
+        </button>
+    );
+};
+
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+// MANAGER COMPONENTS (Projects, Roles, Customization)
+// --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+
+// Projects Manager
+const ProjectsManager = ({ db }) => {
+    const [projects, setProjects] = useState([]);
+    const [currentProject, setCurrentProject] = useState({ id: '', title: '', description: '', imageUrl: '', projectUrl: '' });
+    const [isEditing, setIsEditing] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const projectsCol = collection(db, 'projects');
+        const unsubscribe = onSnapshot(projectsCol, (snapshot) => {
+            const projectsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setProjects(projectsData);
+            setIsLoading(false);
+        }, (error) => {
+            console.error("Error fetching projects:", error);
+            setIsLoading(false);
+        });
+        return () => unsubscribe();
+    }, [db]);
+
+    const handleInputChange = (e) => {
+        const { id, value } = e.target;
+        setCurrentProject(prev => ({ ...prev, [id]: value }));
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const projectToSave = { ...currentProject };
+        const docId = isEditing ? projectToSave.id : Date.now().toString();
+        if (!isEditing) {
+          projectToSave.id = docId;
+        }
+
+        try {
+            await setDoc(doc(db, "projects", docId), projectToSave);
+            handleReset();
+        } catch (error) {
+            console.error("Error saving project:", error);
+        }
+    };
+
+    const handleEdit = (project) => {
+        setIsEditing(true);
+        setCurrentProject(project);
+        window.scrollTo(0, 0);
+    };
+
+    const handleDelete = async (id) => {
+        if (window.confirm("Are you sure you want to delete this project?")) {
+            try {
+                await deleteDoc(doc(db, "projects", id));
+            } catch (error) {
+                console.error("Error deleting project:", error);
+            }
+        }
+    };
+
+    const handleReset = () => {
+        setIsEditing(false);
+        setCurrentProject({ id: '', title: '', description: '', imageUrl: '', projectUrl: '' });
+    };
+
+    return (
+        <div className="space-y-8">
+            <div className="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 className="text-2xl font-bold mb-4 text-white">{isEditing ? 'Edit Project' : 'Add New Project'}</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <FormInput id="title" label="Project Title" type="text" value={currentProject.title} onChange={handleInputChange} placeholder="e.g., Awesome Portfolio Website" />
+                    <FormTextarea id="description" label="Description" value={currentProject.description} onChange={handleInputChange} placeholder="A short description of the project." />
+                    <FormInput id="imageUrl" label="Image URL" type="text" value={currentProject.imageUrl} onChange={handleInputChange} placeholder="https://example.com/image.png" />
+                    <FormInput id="projectUrl" label="Project URL" type="text" value={currentProject.projectUrl} onChange={handleInputChange} placeholder="https://example.com/project" />
+                    <div className="flex space-x-4">
+                        <Button type="submit" variant="primary">{isEditing ? 'Update Project' : 'Add Project'}</Button>
+                        {isEditing && <Button onClick={handleReset} variant="secondary">Cancel</Button>}
+                    </div>
+                </form>
+            </div>
+
+            <div className="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 className="text-2xl font-bold mb-4 text-white">Existing Projects</h2>
+                {isLoading ? (
+                    <p>Loading projects...</p>
+                ) : projects.length === 0 ? (
+                    <p className="text-gray-400">No projects added yet. Use the form above to add one.</p>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {projects.map(project => (
+                            <div key={project.id} className="bg-gray-700 rounded-lg shadow-lg overflow-hidden transition-transform transform hover:-translate-y-1">
+                                <img src={project.imageUrl || 'https://placehold.co/600x400/334155/e2e8f0?text=Project'} alt={project.title} className="w-full h-48 object-cover" />
+                                <div className="p-4">
+                                    <h3 className="text-xl font-semibold text-white mb-2">{project.title}</h3>
+                                    <p className="text-gray-300 text-sm mb-4 h-20 overflow-y-auto">{project.description}</p>
+                                    <div className="flex justify-between items-center">
+                                        <a href={project.projectUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-sm">View Project</a>
+                                        <div className="flex space-x-2">
+                                            <Button onClick={() => handleEdit(project)} variant="secondary">Edit</Button>
+                                            <Button onClick={() => handleDelete(project.id)} variant="danger">Delete</Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// Roles Manager
+const RolesManager = ({ db }) => {
+    const [roles, setRoles] = useState([]);
+    const [currentRole, setCurrentRole] = useState({ id: '', title: '', description: '' });
+    const [isEditing, setIsEditing] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const rolesCol = collection(db, 'roles');
+        const unsubscribe = onSnapshot(rolesCol, (snapshot) => {
+            const rolesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setRoles(rolesData);
+            setIsLoading(false);
+        }, (error) => {
+            console.error("Error fetching roles:", error);
+            setIsLoading(false);
+        });
+        return () => unsubscribe();
+    }, [db]);
+
+    const handleInputChange = (e) => {
+        const { id, value } = e.target;
+        setCurrentRole(prev => ({ ...prev, [id]: value }));
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const roleToSave = { ...currentRole };
+        const docId = isEditing ? roleToSave.id : Date.now().toString();
+        if (!isEditing) {
+          roleToSave.id = docId;
+        }
+
+        try {
+            await setDoc(doc(db, "roles", docId), roleToSave);
+            handleReset();
+        } catch (error) {
+            console.error("Error saving role:", error);
+        }
+    };
+
+    const handleEdit = (role) => {
+        setIsEditing(true);
+        setCurrentRole(role);
+        window.scrollTo(0, 0);
+    };
+
+    const handleDelete = async (id) => {
+        if (window.confirm("Are you sure you want to delete this role?")) {
+            try {
+                await deleteDoc(doc(db, "roles", id));
+            } catch (error) {
+                console.error("Error deleting role:", error);
+            }
+        }
+    };
+
+    const handleReset = () => {
+        setIsEditing(false);
+        setCurrentRole({ id: '', title: '', description: '' });
+    };
+
+    return (
+        <div className="space-y-8">
+            <div className="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 className="text-2xl font-bold mb-4 text-white">{isEditing ? 'Edit Role' : 'Add New Role'}</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <FormInput id="title" label="Role Title" type="text" value={currentRole.title} onChange={handleInputChange} placeholder="e.g., Lead Developer" />
+                    <FormTextarea id="description" label="Role Description" value={currentRole.description} onChange={handleInputChange} placeholder="Describe the responsibilities and skills for this role." />
+                    <div className="flex space-x-4">
+                        <Button type="submit" variant="primary">{isEditing ? 'Update Role' : 'Add Role'}</Button>
+                        {isEditing && <Button onClick={handleReset} variant="secondary">Cancel</Button>}
+                    </div>
+                </form>
+            </div>
+
+            <div className="bg-gray-800 p-6 rounded-lg shadow-xl">
+                <h2 className="text-2xl font-bold mb-4 text-white">Existing Roles</h2>
+                {isLoading ? (
+                    <p>Loading roles...</p>
+                ) : roles.length === 0 ? (
+                    <p className="text-gray-400">No roles added yet. Use the form above to add one.</p>
+                ) : (
+                    <div className="space-y-4">
+                        {roles.map(role => (
+                            <div key={role.id} className="bg-gray-700 p-4 rounded-lg flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-xl font-semibold text-white">{role.title}</h3>
+                                    <p className="text-gray-300">{role.description}</p>
+                                </div>
+                                <div className="flex space-x-2">
+                                    <Button onClick={() => handleEdit(role)} variant="secondary">Edit</Button>
+                                    <Button onClick={() => handleDelete(role.id)} variant="danger">Delete</Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// Customization Manager
+const CustomizationManager = ({ db }) => {
+    const [settings, setSettings] = useState({ name: '', bio: '', email: '', linkedin: '', github: '' });
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        const settingsDoc = doc(db, 'customization', 'main');
+        const unsubscribe = onSnapshot(settingsDoc, (doc) => {
+            if (doc.exists()) {
+                setSettings(doc.data());
+            }
+            setIsLoading(false);
+        }, (error) => {
+            console.error("Error fetching settings:", error);
+            setIsLoading(false);
+        });
+        return () => unsubscribe();
+    }, [db]);
+
+    const handleInputChange = (e) => {
+        const { id, value } = e.target;
+        setSettings(prev => ({ ...prev, [id]: value }));
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setIsSaving(true);
+        try {
+            await setDoc(doc(db, "customization", "main"), settings);
+            alert('Settings updated successfully!');
+        } catch (error) {
+            console.error("Error updating settings:", error);
+            alert('Failed to update settings.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    if (isLoading) {
+        return <p>Loading customization settings...</p>;
+    }
+
+    return (
+        <div className="bg-gray-800 p-6 rounded-lg shadow-xl">
+            <h2 className="text-2xl font-bold mb-4 text-white">Website Customization</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <FormInput id="name" label="Your Name" type="text" value={settings.name} onChange={handleInputChange} placeholder="e.g., Jane Doe" />
+                <FormTextarea id="bio" label="Your Bio" value={settings.bio} onChange={handleInputChange} placeholder="A brief bio about yourself." />
+                <h3 className="text-lg font-semibold pt-4 border-t border-gray-700">Contact & Socials</h3>
+                <FormInput id="email" label="Email Address" type="email" value={settings.email} onChange={handleInputChange} placeholder="contact@example.com" />
+                <FormInput id="linkedin" label="LinkedIn URL" type="text" value={settings.linkedin} onChange={handleInputChange} placeholder="https://linkedin.com/in/yourprofile" />
+                <FormInput id="github" label="GitHub URL" type="text" value={settings.github} onChange={handleInputChange} placeholder="https://github.com/yourusername" />
+                <Button type="submit" variant="primary" disabled={isSaving}>
+                    {isSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
+            </form>
+        </div>
+    );
+};
+
+
+export default App;
